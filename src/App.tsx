@@ -4,6 +4,8 @@ import { LanguagePicker } from "./components/LanguagePicker";
 import { ResourceBar } from "./components/ResourceBar";
 import { TamgaFlag } from "./components/TamgaFlag";
 import { TribeSelect } from "./components/TribeSelect";
+import { PathSelect } from "./components/PathSelect";
+import { currentEra, currentPath } from "./engine/economy";
 import { SON_BY_ID, TRIBE_BY_ID } from "./data/oghuzData";
 import { I18nProvider, useI18n } from "./i18n";
 import type { StringKey } from "./i18n/strings";
@@ -38,7 +40,17 @@ function Game() {
     );
   }
 
+  if (!state.path) {
+    return (
+      <div className="min-h-full bg-stone-950">
+        <PathSelect tribeId={state.tribe} onChoose={(id) => act({ type: "choosePath", path: id })} />
+      </div>
+    );
+  }
+
   const tribe = TRIBE_BY_ID[state.tribe];
+  const path = currentPath(state);
+  const era = currentEra(state);
   return (
     <div className="min-h-full bg-stone-950 pb-20 text-stone-100 sm:pb-4">
       <header className="sticky top-0 z-10 border-b border-stone-800 bg-stone-950/95 px-3 py-2 backdrop-blur">
@@ -48,6 +60,11 @@ function Game() {
             <div className="font-extrabold text-kayi-gold">{t("title")}</div>
             <div className="text-xs text-stone-400">
               {tribe.name} · {SON_BY_ID[tribe.son].name} ({tx(SON_BY_ID[tribe.son].meaning)}) · {tribe.wing}
+              {path && era && (
+                <span className="block text-kayi-gold/80">
+                  {tx(path.name)} · {t("eraOf", { n: state.era + 1, total: path.eras.length })} · {tx(era.title)}
+                </span>
+              )}
             </div>
           </div>
           <nav className="hidden gap-1 md:flex">

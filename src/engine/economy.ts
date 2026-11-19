@@ -1,9 +1,10 @@
 import { BUILDINGS, HERO_BY_ID, STATES, TRIBE_BY_ID, TROOPS } from "../data/oghuzData";
+import { PATH_BY_ID, type Era, type Path } from "../data/eras";
 import type { BuildingId, Buffs, GameState, ResourceId, Resources, TroopId } from "../types/game";
 
 export const RESOURCE_IDS: ResourceId[] = ["azik", "kereste", "tas", "demir", "altin", "celik"];
 export const TROOP_IDS: TroopId[] = ["azap", "okcu", "sipahi"];
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const MAX_OFFLINE_SECONDS = 8 * 3600;
 export const TOY_DURATION_MS = 60 * 60 * 1000;
 export const TOY_COOLDOWN_MS = 8 * 60 * 60 * 1000;
@@ -17,16 +18,22 @@ export function newGame(now: number): GameState {
     troops: { azap: 20, okcu: 10, sipahi: 0 },
     wounded: { azap: 0, okcu: 0, sipahi: 0 },
     herds: { koyun: 2, at: 0, deve: 0 },
-    heroes: { osman: { level: 1, xp: 0 } },
+    heroes: {},
     conquered: [],
     towers: [null, null, null, null, null, null],
     towerLevels: [1, 1, 1, 1, 1, 1],
     defenseWave: 1,
     huntCooldowns: {},
     log: [],
-    squad: ["osman"],
+    squad: [],
     toyUntil: 0,
     lastToy: 0,
+    path: null,
+    era: 0,
+    forts: [],
+    huntsWon: 0,
+    ocaks: {},
+    founded: false,
     lastTick: now,
   };
 }
@@ -45,6 +52,7 @@ export function totalBuffs(state: GameState): Required<Buffs> {
     const s = STATES.find((x) => x.id === id);
     if (s) add(s.tribute);
   }
+  out.cavalryPct += OCAK_CAVALRY * ocakLevels(state);
   return out;
 }
 
@@ -75,7 +83,8 @@ export function productionPerSecond(state: GameState, now: number): Resources {
     kereste: rate(0.9 * lv.kerestehane, b.kerestePct),
     tas: rate(0.7 * lv.tasocagi, b.tasPct),
     demir: rate(0.45 * lv.maden, b.demirPct),
-    altin: rate(0.35 * lv.otag + 0.3 * lv.kervansaray + 0.06 * state.herds.deve, b.altinPct),
+    // Gold comes only from gaza, hunting and the defence of the frontier, never from passive income.
+    altin: 0,
     celik: lv.demirci > 0 ? 0.03 * lv.demirci : 0,
   };
 }
@@ -157,4 +166,89 @@ export function heroLevelUpCost(level: number): number {
 
 export function isHeroUnlocked(state: GameState, id: string): boolean {
   return Boolean(state.heroes[id]) && Boolean(HERO_BY_ID[id]);
+}
+
+/* ------------------------------------------------------------------ paths, eras, spoils and akıncı houses */
+
+export const OCAK_CAVALRY = 3;
+export const OCAK_SPOILS = 5;
+export const OCAK_MAX = 10;
+
+export function currentPath(state: GameState): Path | null {
+  return state.path ? PATH_BY_ID[state.path] ?? null : null;
+}
+
+export function currentEra(state: GameState): Era | null {
+  const p = currentPath(state);
+  return p ? p.eras[Math.min(state.era, p.eras.length - 1)] : null;
+}
+
+export function ocakLevels(state: GameState): number {
+  return Object.values(state.ocaks).reduce((a, b) => a + b, 0);
+}
+
+/** Multiplier on gold from gaza and hunting: caravanserai, camels, akıncı houses and gold bonuses. */
+export function spoilsMult(state: GameState): number {
+  const b = totalBuffs(state);
+  return 1 + 0.1 * state.buildings.kervansaray + Math.min(30, 3 * state.herds.deve) / 100 + (OCAK_SPOILS * ocakLevels(state)) / 100 + b.altinPct / 100;
+}
+
+export function ocakCost(level: number): Partial<Resources> {
+  const m = Math.pow(1.6, level);
+  return { altin: Math.round(300 * m), azik: Math.round(400 * m), demir: Math.round(80 * m) };
+}
+
+/** Era index in which a fort becomes a goal; forts of the current and earlier eras can be attacked. */
+export function fortEra(path: Path, fortId: string): number {
+  const i = path.eras.findIndex((e) => e.goal.forts?.includes(fortId));
+  return i < 0 ? 0 : i;
+}
+
+export interface GoalLine {
+  key: "goalForts" | "goalUnions" | "goalHunts" | "goalOtag" | "goalWave";
+  have: number;
+  need: number;
+}
+
+export function eraGoals(state: GameState): GoalLine[] {
+  const era = currentEra(state);
+  if (!era) return [];
+  const g = era.goal;
+  const out: GoalLine[] = [];
+  if (g.forts) out.push({ key: "goalForts", have: g.forts.filter((f) => state.forts.includes(f)).length, need: g.forts.length });
+  if (g.unions !== undefined) {
+    if (typeof g.unions === "number") out.push({ key: "goalUnions", have: Math.min(g.unions, state.conquered.length), need: g.unions });
+    else out.push({ key: "goalUnions", have: g.unions.filter((u) => state.conquered.includes(u)).length, need: g.unions.length });
+  }
+  if (g.hunts) out.push({ key: "goalHunts", have: Math.min(g.hunts, state.huntsWon), need: g.hunts });
+  if (g.otag) out.push({ key: "goalOtag", have: Math.min(g.otag, state.buildings.otag), need: g.otag });
+  if (g.wave) out.push({ key: "goalWave", have: Math.min(g.wave, state.defenseWave - 1), need: g.wave });
+  return out;
+}
+
+export function eraComplete(state: GameState): boolean {
+  return !state.founded && eraGoals(state).every((g) => g.have >= g.need);
+}
+
+/** Heroes who have joined by the current era: rulers, companions and commanders of raised houses. */
+export function joinedHeroes(state: GameState): string[] {
+  const p = currentPath(state);
+  if (!p) return [];
+  const out: string[] = [];
+  p.eras.slice(0, state.era + 1).forEach((e) => {
+    for (const h of [e.ruler, ...e.companions]) if (h && HERO_BY_ID[h] && !out.includes(h)) out.push(h);
+  });
+  for (const o of p.ocaks) {
+    if (!state.ocaks[o.id]) continue;
+    for (const c of o.commanders) if (c.era <= state.era && !out.includes(c.hero)) out.push(c.hero);
+  }
+  return out;
+}
+
+/** Commander of a house in the current era (the latest who has come of age). */
+export function ocakCommander(state: GameState, ocakId: string): string | null {
+  const o = currentPath(state)?.ocaks.find((x) => x.id === ocakId);
+  if (!o) return null;
+  const ready = o.commanders.filter((c) => c.era <= state.era);
+  return ready.length ? ready[ready.length - 1].hero : null;
 }

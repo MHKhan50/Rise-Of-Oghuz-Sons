@@ -23,6 +23,8 @@ import {
   trainCost,
 } from "../engine/economy";
 import { HERDS } from "../data/oghuzData";
+import { PATH_BY_ID, fortDefenders, pathHeroes } from "../data/eras";
+import { OCAK_MAX, currentPath, eraComplete, fortEra, joinedHeroes, ocakCost, spoilsMult } from "../engine/economy";
 import type { BattleReport, BuildingId, GameState, HerdId, Resources, TowerType, TroopId } from "../types/game";
 
 const SAVE_KEY = "rise-of-oghuz-sons-save";
@@ -30,11 +32,15 @@ const SAVE_KEY = "rise-of-oghuz-sons-save";
 export type Action =
   | { type: "tick"; now: number }
   | { type: "chooseTribe"; tribe: string }
+  | { type: "choosePath"; path: string }
+  | { type: "gaza"; fortId: string; luck: number; now: number }
+  | { type: "nextEra"; now: number }
+  | { type: "raiseOcak"; id: string }
   | { type: "build"; id: BuildingId }
   | { type: "train"; troop: TroopId; count: number }
   | { type: "buyHerd"; herd: HerdId }
   | { type: "hunt"; beast: string; now: number; luck: number }
-  | { type: "attack"; stateId: string; luck: number; now: number }
+  | { type: "unite"; stateId: string; now: number }
   | { type: "unlockHero"; id: string }
   | { type: "levelHero"; id: string }
   | { type: "toggleSquad"; id: string }
@@ -43,6 +49,10 @@ export type Action =
   | { type: "upgradeTower"; slot: number }
   | { type: "defenseDone"; won: boolean; leaked: number; now: number }
   | { type: "reset"; now: number };
+
+export function unionGift(tier: number): number {
+  return 100 * tier;
+}
 
 function addLog(state: GameState, report: Omit<BattleReport, "at">, now: number): BattleReport[] {
   return [{ ...report, at: now }, ...state.log].slice(0, 30);
@@ -65,6 +75,20 @@ function addHeroXp(state: GameState, baseXp: number): GameState["heroes"] {
   return heroes;
 }
 
+/** Give every hero who has joined by the current era a place in the roster; fill an empty squad. */
+function syncHeroes(state: GameState): GameState {
+  const heroes = { ...state.heroes };
+  const joined = joinedHeroes(state);
+  for (const id of joined) if (!heroes[id]) heroes[id] = { level: 1, xp: 0 };
+  const squad = state.squad.length ? state.squad : joined.slice(0, 3);
+  return { ...state, heroes, squad };
+}
+
+/** Gold scaled by caravanserai, camels and akıncı houses; other resources unchanged. */
+function withSpoils(state: GameState, reward: Partial<Resources>): Partial<Resources> {
+  return reward.altin ? { ...reward, altin: Math.round(reward.altin * spoilsMult(state)) } : reward;
+}
+
 export function towerCost(tower: TowerType, level: number): Partial<Resources> {
   const mult = Math.pow(1.7, level - 1);
   return Object.fromEntries(Object.entries(TOWERS[tower].cost).map(([k, v]) => [k, Math.round((v ?? 0) * mult)]));
@@ -78,6 +102,65 @@ export function reducer(state: GameState, action: Action): GameState {
     }
     case "chooseTribe":
       return { ...state, tribe: action.tribe };
+    case "choosePath": {
+      if (!PATH_BY_ID[action.path] || state.path) return state;
+      return syncHeroes({ ...state, path: action.path, era: 0, squad: [] });
+    }
+    case "nextEra": {
+      const path = currentPath(state);
+      if (!path || !eraComplete(state)) return state;
+      const last = state.era >= path.eras.length - 1;
+      const next = last ? { ...state, founded: true } : { ...state, era: state.era + 1 };
+      const era = path.eras[next.era];
+      return syncHeroes({
+        ...next,
+        log: addLog(state, {
+          title: last ? { k: "logFounded", v: { pathId: path.id } } : { k: "logEra", v: { pathId: path.id, eraIdx: next.era, years: era.years } },
+          win: true,
+          lines: last ? [] : [{ k: "logEraHeroes", v: { n: [era.ruler, ...era.companions].filter(Boolean).length } }],
+        }, action.now),
+      });
+    }
+    case "raiseOcak": {
+      const path = currentPath(state);
+      const o = path?.ocaks.find((x) => x.id === action.id);
+      if (!o || o.commanders[0].era > state.era) return state;
+      const lvl = state.ocaks[o.id] ?? 0;
+      if (lvl >= OCAK_MAX) return state;
+      const cost = ocakCost(lvl);
+      if (!canAfford(state.resources, cost)) return state;
+      return syncHeroes({ ...state, resources: pay(state.resources, cost), ocaks: { ...state.ocaks, [o.id]: lvl + 1 } });
+    }
+    case "gaza": {
+      const path = currentPath(state);
+      const f = path?.forts.find((x) => x.id === action.fortId);
+      if (!path || !f || state.forts.includes(f.id) || fortEra(path, f.id) > state.era) return state;
+      const result = resolveBattle(state, fortDefenders(f), action.luck);
+      const troops = { ...state.troops };
+      const wounded = { ...state.wounded };
+      for (const t of TROOP_IDS) {
+        troops[t] = Math.max(0, troops[t] - result.losses[t] - result.wounded[t]);
+        wounded[t] += result.wounded[t];
+      }
+      const spoils = withSpoils(state, { altin: 200 * f.tier, demir: 50 * f.tier, celik: 5 * f.tier });
+      return {
+        ...state,
+        troops,
+        wounded,
+        forts: result.win ? [...state.forts, f.id] : state.forts,
+        resources: result.win ? gain(state.resources, spoils, storageCap(state)) : state.resources,
+        heroes: addHeroXp(state, result.win ? 40 * f.tier : 10),
+        log: addLog(state, {
+          title: { k: result.win ? "logConquered" : "logRepelled", v: { name: f.name } },
+          win: result.win,
+          lines: [
+            { k: "attackVs", v: { a: Math.round(result.attack), d: Math.round(result.defence) } },
+            { k: "logLosses", v: { l: TROOP_IDS.reduce((a, t) => a + result.losses[t], 0), w: TROOP_IDS.reduce((a, t) => a + result.wounded[t], 0) } },
+            result.win ? { k: "logSpoils", v: { g: spoils.altin ?? 0, i: spoils.demir ?? 0, s: spoils.celik ?? 0 } } : { k: "logTryAgain" },
+          ],
+        }, action.now),
+      };
+    }
     case "build": {
       if (state.buildings[action.id] >= maxBuildingLevel(state, action.id)) return state;
       const cost = buildCost(state, action.id);
@@ -126,9 +209,11 @@ export function reducer(state: GameState, action: Action): GameState {
         wounded[t] += Math.floor(lost * 0.8);
       }
       const next = { ...state, troops, wounded };
+      const reward = withSpoils(state, beast.reward);
       return {
         ...next,
-        resources: win ? gain(state.resources, beast.reward, storageCap(state)) : state.resources,
+        huntsWon: win ? state.huntsWon + 1 : state.huntsWon,
+        resources: win ? gain(state.resources, reward, storageCap(state)) : state.resources,
         heroes: win ? addHeroXp(state, beast.xp) : state.heroes,
         huntCooldowns: { ...state.huntCooldowns, [beast.id]: action.now + beast.cooldownMin * 60_000 },
         log: addLog(state, {
@@ -136,43 +221,31 @@ export function reducer(state: GameState, action: Action): GameState {
           win,
           lines: [
             { k: "logHuntPower", v: { p: Math.round(power), b: beast.power } },
-            win ? { k: "logSpoils", v: { g: beast.reward.altin ?? 0, i: beast.reward.demir ?? 0, s: beast.reward.celik ?? 0 } } : { k: "logEscaped" },
+            win ? { k: "logSpoils", v: { g: reward.altin ?? 0, i: reward.demir ?? 0, s: reward.celik ?? 0 } } : { k: "logEscaped" },
           ],
         }, action.now),
       };
     }
-    case "attack": {
-      const target = STATES.find((s) => s.id === action.stateId);
+    case "unite": {
+      // Muslim and Turkic states join by alliance: show enough strength, send gifts, no blood is shed.
+      const target = STATES.find((x) => x.id === action.stateId);
       if (!target || state.conquered.includes(target.id)) return state;
-      const result = resolveBattle(state, target.defenders, action.luck);
-      const troops = { ...state.troops };
-      const wounded = { ...state.wounded };
-      for (const t of TROOP_IDS) {
-        troops[t] = Math.max(0, troops[t] - result.losses[t] - result.wounded[t]);
-        wounded[t] += result.wounded[t];
-      }
-      const spoils = { altin: 150 * target.tier, celik: 5 * target.tier, demir: 60 * target.tier };
+      const result = resolveBattle(state, target.defenders, 1);
+      const gift = { altin: unionGift(target.tier) };
+      if (!result.win || !canAfford(state.resources, gift)) return state;
       return {
         ...state,
-        troops,
-        wounded,
-        conquered: result.win ? [...state.conquered, target.id] : state.conquered,
-        resources: result.win ? gain(state.resources, spoils, storageCap(state)) : state.resources,
-        heroes: addHeroXp(state, result.win ? 40 * target.tier : 10),
-        log: addLog(state, {
-          title: { k: result.win ? "logConquered" : "logRepelled", v: { name: target.name } },
-          win: result.win,
-          lines: [
-            { k: "attackVs", v: { a: Math.round(result.attack), d: Math.round(result.defence) } },
-            { k: "logLosses", v: { l: TROOP_IDS.reduce((a, t) => a + result.losses[t], 0), w: TROOP_IDS.reduce((a, t) => a + result.wounded[t], 0) } },
-            result.win ? { k: "logSpoils", v: { g: spoils.altin, i: spoils.demir, s: spoils.celik } } : { k: "logTryAgain" },
-          ],
-        }, action.now),
+        resources: pay(state.resources, gift),
+        conquered: [...state.conquered, target.id],
+        log: addLog(state, { title: { k: "logUnited", v: { name: target.name } }, win: true, lines: [{ k: "logGift", v: { g: gift.altin } }] }, action.now),
       };
     }
     case "unlockHero": {
       const hero = HERO_BY_ID[action.id];
       if (!hero || state.heroes[action.id]) return state;
+      // Rulers and companions of your own path join with their era and cannot be bought early.
+      const path = currentPath(state);
+      if (path && pathHeroes(path).includes(hero.id)) return state;
       const cost = { altin: hero.unlockCost };
       if (!canAfford(state.resources, cost)) return state;
       return { ...state, resources: pay(state.resources, cost), heroes: { ...state.heroes, [action.id]: { level: 1, xp: 0 } } };
@@ -246,7 +319,7 @@ function load(now: number): GameState {
     if (!raw) return newGame(now);
     const saved = JSON.parse(raw) as GameState;
     if (saved.version !== SAVE_VERSION) return newGame(now);
-    const merged = { ...newGame(now), ...saved };
+    const merged = syncHeroes({ ...newGame(now), ...saved });
     // Offline progress, capped at eight hours.
     return reducer(merged, { type: "tick", now });
   } catch {

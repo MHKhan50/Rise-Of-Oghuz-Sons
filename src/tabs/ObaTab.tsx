@@ -2,6 +2,8 @@ import { Hammer, PartyPopper, Swords } from "lucide-react";
 import { useState } from "react";
 import { Button, Card, CostLine, SectionTitle, fmt } from "../components/ui";
 import { BUILDINGS, TROOPS } from "../data/oghuzData";
+import { unitsAt } from "../data/eras";
+import { currentPath } from "../engine/economy";
 import {
   TOY_COOLDOWN_MS,
   TROOP_IDS,
@@ -26,6 +28,7 @@ export function ObaTab({ state, act, now }: { state: GameState; act: (a: Action)
   const { t, tx } = useI18n();
   const [count, setCount] = useState(10);
   const room = armyCap(state) - Math.ceil(armySize(state));
+  const units = unitsAt(currentPath(state), state.era);
   const toyActive = now < state.toyUntil;
   const toyWait = state.lastToy + TOY_COOLDOWN_MS - now;
   return (
@@ -88,7 +91,7 @@ export function ObaTab({ state, act, now }: { state: GameState; act: (a: Action)
               <div key={tr} className="mb-2 rounded-lg border border-stone-700 bg-stone-950/60 p-2 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-1">
                   <span>
-                    <b>{TROOPS[tr].name}</b>{" "}
+                    <b>{units[tr]?.name ?? TROOPS[tr].name}</b>{" "}
                     <span className="text-xs text-stone-400">
                       {tx(TROOPS[tr].label)} · {t("power")} {TROOPS[tr].power}
                     </span>

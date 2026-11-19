@@ -2,7 +2,10 @@ import { ScrollText } from "lucide-react";
 import { useState } from "react";
 import { TamgaFlag } from "../components/TamgaFlag";
 import { Button, Card, Confidence, SectionTitle, buffText, fmt } from "../components/ui";
-import { BEASTS, HEROES, SONS, SOURCES, STATES, TRIBES } from "../data/oghuzData";
+import { BEASTS, HEROES, HERO_BY_ID, SONS, SOURCES, STATES, TRIBES } from "../data/oghuzData";
+import { PATH_BY_ID } from "../data/eras";
+import { HeroPortrait } from "../components/HeroPortrait";
+import { currentPath } from "../engine/economy";
 import { playerStrength } from "../engine/combat";
 import { TROOP_IDS } from "../engine/economy";
 import { useI18n } from "../i18n";
@@ -21,12 +24,29 @@ export function CodexTab({ state, act }: { state: GameState; act: (a: Action) =>
       const beast = BEASTS.find((b) => b.id === v.beastId);
       v.name = beast ? tx(beast.name) : String(v.beastId);
     }
+    if (typeof v.pathId === "string" && PATH_BY_ID[v.pathId]) {
+      const p = PATH_BY_ID[v.pathId];
+      v.name = typeof v.eraIdx === "number" && p.eras[v.eraIdx] ? tx(p.eras[v.eraIdx].title) : tx(p.name);
+    }
     return t(m.k as StringKey, v);
   };
   const confirming = Date.now() - armed < 4000;
+  const path = currentPath(state);
   return (
     <div className="flex flex-col gap-3">
-      <Card className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+      <Card className="grid grid-cols-2 gap-2 text-center sm:grid-cols-6">
+        <div>
+          <div className="text-xs text-stone-400">{t("statsEra")}</div>
+          <div className="text-2xl font-bold text-kayi-gold">
+            {path ? `${state.era + 1}/${path.eras.length}` : "–"}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-stone-400">{t("statsForts")}</div>
+          <div className="text-2xl font-bold">
+            {state.forts.length}/{path?.forts.length ?? 0}
+          </div>
+        </div>
         <div>
           <div className="text-xs text-stone-400">{t("statsStates")}</div>
           <div className="text-2xl font-bold text-kayi-gold">
@@ -96,6 +116,34 @@ export function CodexTab({ state, act }: { state: GameState; act: (a: Action) =>
             ))}
           </div>
         ))}
+      </Card>
+
+      {path && (
+        <Card>
+          <SectionTitle title={`${t("silsileTitle")} · ${tx(path.name)}`} sub={t("silsileSub")} />
+          <ol className="space-y-1 text-sm">
+            {path.eras.map((e, i) => (
+              <li key={e.id} className={`flex items-center gap-2 rounded p-1 ${i === state.era ? "bg-kayi-gold/10" : ""} ${i > state.era ? "opacity-60" : ""}`}>
+                {e.ruler && HERO_BY_ID[e.ruler] ? <HeroPortrait hero={HERO_BY_ID[e.ruler]} size={30} /> : <span className="inline-block w-[30px]" />}
+                <span className="w-6 text-end text-stone-500">{i + 1}.</span>
+                <span className="flex-1">
+                  <b>{tx(e.title)}</b> <span className="text-xs text-stone-400">({e.years})</span>
+                  {e.rulers.length > 0 && <span className="block text-xs text-stone-300">{t("pathSilsileHint")}: {e.rulers.join(" · ")}</span>}
+                </span>
+                <Confidence level={e.conf} />
+              </li>
+            ))}
+            {path.after && (
+              <li className="ps-10 text-xs text-stone-400">
+                {t("laterRulers")}: {path.after.join(" · ")}
+              </li>
+            )}
+          </ol>
+        </Card>
+      )}
+
+      <Card>
+        <p className="text-xs text-stone-400">{t("dressNote")}</p>
       </Card>
 
       <Card>

@@ -75,6 +75,9 @@ export interface HistoricalState {
   tier: number;
 }
 
+/** Headwear and dress of a portrait; every look is fully covered period dress. */
+export type HeroLook = "bork" | "akinci" | "turban" | "sultan" | "scholar" | "fez" | "hatun";
+
 export interface Hero {
   id: string;
   name: string;
@@ -89,6 +92,9 @@ export interface Hero {
   gender: "m" | "f";
   /** Kaftan and trim colours for the portrait. */
   colors: [string, string];
+  look: HeroLook;
+  beard?: "full" | "moustache" | "white";
+  conf?: Confidence;
 }
 
 export interface Beast {
@@ -139,5 +145,15 @@ export interface GameState {
   /** Feast (toy) buff: production +10% until this time. */
   toyUntil: number;
   lastToy: number;
+  /** Path through history (eras.ts) and the current era index. */
+  path: string | null;
+  era: number;
+  /** Forts taken by gaza. `conquered` holds the Muslim and Turkic states united by alliance. */
+  forts: string[];
+  huntsWon: number;
+  /** Akıncı and frontier houses: level per house id. */
+  ocaks: Record<string, number>;
+  /** True once the last era of the path is complete. */
+  founded: boolean;
   lastTick: number;
 }

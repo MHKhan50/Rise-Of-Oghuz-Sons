@@ -1,4 +1,5 @@
 import type { L } from "../i18n";
+import { PATH_HEROES } from "./heroes2";
 import type {
   Beast,
   BuildingId,
@@ -257,16 +258,26 @@ const HERO_ROWS: HeroRow[] = [
   ["selcanhatun", "Selcan Hatun", "Cavalry duelist", "sipahi", undefined, { en: "Heroine of the Dede Korkut epic", ur: "Dede Korkut dastan ki heroine", tr: "Dede Korkut destanının kadın kahramanı" }, "Thunder Sabre", 16, 1600, "f", ["#7f1d1d", "#e3a800"]],
 ];
 
-export const HEROES: Hero[] = HERO_ROWS.map((r) => ({
-  id: r[0], name: r[1], role: r[2], troop: r[3], tribe: r[4], origin: r[5], skill: r[6], power: r[7], unlockCost: r[8],
-  gender: r[9], colors: r[10],
-}));
+const BASE_LOOK: Record<string, Hero["look"]> = {
+  fatih: "sultan", melikshah: "sultan", alparslan: "sultan", tugrul: "turban", kilicarslan: "sultan", mahmudghazni: "turban",
+  salahaddin: "turban", nuraddin: "turban", barbaros: "turban", baybars: "turban", aibak: "turban", jalaladdin: "turban",
+  dedekorkut: "scholar", banucicek: "hatun", selcanhatun: "hatun",
+};
+
+export const HEROES: Hero[] = [
+  ...HERO_ROWS.map((r): Hero => ({
+    id: r[0], name: r[1], role: r[2], troop: r[3], tribe: r[4], origin: r[5], skill: r[6], power: r[7], unlockCost: r[8],
+    gender: r[9], colors: r[10], look: BASE_LOOK[r[0]] ?? "bork", beard: r[0] === "dedekorkut" ? "white" : undefined,
+    conf: ["dedekorkut", "salurkazan", "banucicek", "selcanhatun"].includes(r[0]) ? "contested" : "verified",
+  })),
+  ...PATH_HEROES,
+];
 
 export const HERO_BY_ID: Record<string, Hero> = Object.fromEntries(HEROES.map((h) => [h.id, h]));
 
 export const BEASTS: Beast[] = [
-  { id: "geyik", name: { en: "Red stag", ur: "Laal barahsingha", tr: "Kızıl Geyik" }, power: 40, reward: { azik: 400, celik: 4 }, xp: 20, cooldownMin: 10 },
-  { id: "domuz", name: { en: "Wild boar", ur: "Jangli suar", tr: "Yaban Domuzu" }, power: 90, reward: { azik: 600, demir: 120, celik: 8 }, xp: 35, cooldownMin: 20 },
+  { id: "geyik", name: { en: "Red stag", ur: "Laal barahsingha", tr: "Kızıl Geyik" }, power: 40, reward: { azik: 400, altin: 80, celik: 4 }, xp: 20, cooldownMin: 10 },
+  { id: "dagkecisi", name: { en: "Mountain ibex", ur: "Pahari markhor", tr: "Dağ Keçisi" }, power: 90, reward: { azik: 600, altin: 150, demir: 120, celik: 8 }, xp: 35, cooldownMin: 20 },
   { id: "bozkurt", name: { en: "Grey wolf pack", ur: "Bhure bheriyon ka gol", tr: "Bozkurt sürüsü" }, power: 180, reward: { altin: 300, celik: 16 }, xp: 60, cooldownMin: 45 },
   { id: "bozayi", name: { en: "Boz Ayı, the raging steppe bear", ur: "Boz Ayı, ghazabnak bhaloo", tr: "Boz Ayı" }, power: 650, reward: { altin: 1500, celik: 80 }, xp: 250, cooldownMin: 48 * 60, boss: true },
 ];
@@ -289,10 +300,10 @@ export interface BuildingInfo {
 }
 
 export const BUILDINGS: BuildingInfo[] = [
-  { id: "otag", name: "Otağ", label: { en: "Royal command tent", ur: "Shahi khaima", tr: "Hükümdar çadırı" }, text: { en: "Other buildings can be at most one level above it; adds gold tax and pasture.", ur: "Baqi imaratein is se zyada se zyada ek level upar; sona aur charagah barhata hai.", tr: "Diğer yapılar en fazla bir seviye yukarı çıkabilir; vergi ve otlak ekler." }, baseCost: { kereste: 300, tas: 250, altin: 120 } },
+  { id: "otag", name: "Otağ", label: { en: "Royal command tent", ur: "Shahi khaima", tr: "Hükümdar çadırı" }, text: { en: "Other buildings can be at most one level above it; raises the army and herd limits.", ur: "Baqi imaratein is se zyada se zyada ek level upar; fauj aur rewar ki hadd barhata hai.", tr: "Diğer yapılar en fazla bir seviye yukarı çıkabilir; ordu ve sürü sınırını artırır." }, baseCost: { kereste: 300, tas: 250, altin: 120 } },
   { id: "cami", name: "Cami", label: { en: "Mosque", ur: "Masjid", tr: "Cami" }, text: { en: "The heart of the oba: +2% power for all troops per level.", ur: "Oba ka dil: har level par tamam fauj ki taqat +2%.", tr: "Obanın kalbi: her seviyede tüm askerlere +%2 güç." }, baseCost: { kereste: 250, tas: 350, altin: 150 } },
   { id: "medrese", name: "Medrese", label: { en: "Madrasa", ur: "Madrasa", tr: "Medrese" }, text: { en: "Learning and strategy: +10% hero experience per level.", ur: "Ilm aur hikmat-e-amali: har level par hero XP +10%.", tr: "İlim ve strateji: her seviyede +%10 kahraman tecrübesi." }, baseCost: { kereste: 220, tas: 280, altin: 180 } },
-  { id: "kervansaray", name: "Kervansaray", label: { en: "Caravanserai", ur: "Karwan sarai", tr: "Kervansaray" }, text: { en: "Trade on the Silk Road: +0.3 gold per second per level.", ur: "Shahrah-e-Resham ki tijarat: har level par +0.3 sona fi second.", tr: "İpek Yolu ticareti: her seviyede saniyede +0,3 altın." }, baseCost: { kereste: 260, tas: 300, azik: 200 } },
+  { id: "kervansaray", name: "Kervansaray", label: { en: "Caravanserai", ur: "Karwan sarai", tr: "Kervansaray" }, text: { en: "Caravans carry home the spoils: +10% gold from gaza and hunting per level.", ur: "Karwan ghanimat ghar laate hain: har level par jihad aur shikar ke sone mein +10%.", tr: "Kervanlar ganimeti taşır: her seviyede gaza ve avdan +%10 altın." }, baseCost: { kereste: 260, tas: 300, azik: 200 } },
   { id: "ciftlik", name: "Çiftlik", label: { en: "Fields", ur: "Khait", tr: "Tarla" }, text: { en: "Produces food.", ur: "Khurak paida karta hai.", tr: "Azık üretir." }, baseCost: { kereste: 80, tas: 40 } },
   { id: "kerestehane", name: "Kerestehane", label: { en: "Lumber camp", ur: "Lakri ka karkhana", tr: "Kerestehane" }, text: { en: "Produces wood.", ur: "Lakri paida karta hai.", tr: "Kereste üretir." }, baseCost: { azik: 60, tas: 50 } },
   { id: "tasocagi", name: "Taş Ocağı", label: { en: "Quarry", ur: "Pathar ki kaan", tr: "Taş ocağı" }, text: { en: "Produces stone.", ur: "Pathar nikalta hai.", tr: "Taş üretir." }, baseCost: { azik: 60, kereste: 70 } },
@@ -313,7 +324,7 @@ export const TROOPS: Record<TroopId, { name: string; label: L; power: number; co
 export const HERDS: Record<HerdId, { name: string; label: L; cost: number; text: L }> = {
   koyun: { name: "Koyun", label: { en: "Sheep flock", ur: "Bheiron ka rewar", tr: "Koyun sürüsü" }, cost: 60, text: { en: "+0.25 food/s each", ur: "har ek +0.25 khurak/s", tr: "her biri +0,25 azık/sn" } },
   at: { name: "Türkmen Atı", label: { en: "Warhorses", ur: "Jangi ghore", tr: "Türkmen atı" }, cost: 160, text: { en: "+1% cavalry power each (max 30%)", ur: "har ek sawar taqat +1% (zyada se zyada 30%)", tr: "her biri +%1 süvari gücü (en çok %30)" } },
-  deve: { name: "Baktriya Devesi", label: { en: "Bactrian camels", ur: "Do kohan wale oont", tr: "Baktriya devesi" }, cost: 220, text: { en: "+0.06 gold/s each", ur: "har ek +0.06 sona/s", tr: "her biri +0,06 altın/sn" } },
+  deve: { name: "Baktriya Devesi", label: { en: "Bactrian camels", ur: "Do kohan wale oont", tr: "Baktriya devesi" }, cost: 220, text: { en: "+3% spoils carried home each (max 30%)", ur: "har ek ghanimat +3% (zyada se zyada 30%)", tr: "her biri ganimete +%3 (en çok %30)" } },
 };
 
 export const TOWERS: Record<TowerType, { name: string; label: L; cost: Partial<Resources>; damage: number; range: number; cooldown: number; splash: number; color: string }> = {
@@ -328,6 +339,12 @@ export const SOURCES = [
   "Faruk Sümer, Oğuzlar (Türkmenler): Tarihleri, Boy Teşkilâtı, Destanları (1980).",
   "TDV İslâm Ansiklopedisi: entries Kayı, Bayat, Bayındır, Beydili, Salur, Yıva, Üçoklar, Bozoklar, Akkoyunlular, Özeroğulları, Candaroğulları.",
   "Encyclopaedia Iranica: Afšār.",
+  "Aşıkpaşazâde, Tevârîh-i Âl-i Osmân (15th c.); Neşrî, Kitâb-ı Cihan-nümâ.",
+  "Halil İnalcık, The Ottoman Empire: The Classical Age 1300–1600 (1973).",
+  "Colin Imber, The Ottoman Empire, 1300–1650 (2002).",
+  "TDV İslâm Ansiklopedisi: entries Akıncı, Evrenosoğulları, Mihaloğulları, Malkoçoğulları, Turahanoğulları, Selçuklular.",
+  "Carole Hillenbrand, Turkish Myth and Muslim Symbol: The Battle of Manzikert (2007).",
+  "Peter Jackson, The Delhi Sultanate: A Political and Military History (1999).",
 ];
 
 /** Names of the bonuses shown on tribes, states and tribute. */
